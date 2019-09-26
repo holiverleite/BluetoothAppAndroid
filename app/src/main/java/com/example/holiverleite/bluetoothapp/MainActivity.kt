@@ -19,6 +19,8 @@ class MainActivity : AppCompatActivity() {
 
         this.bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
 
+        this.updateBluetoothStatusButton()
+
         if (bluetoothAdapter != null) {
             this.bluetoothButton.setOnClickListener {
                 this.changeBluetoothStatus()
@@ -29,11 +31,7 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
-        if (this.bluetoothAdapter?.isEnabled == false) {
-            this.bluetoothButton.setBackgroundColor(Color.RED)
-        } else {
-            this.bluetoothButton.setBackgroundColor(Color.GREEN)
-        }
+        this.updateBluetoothStatusButton()
     }
 
     fun changeBluetoothStatus() {
@@ -43,6 +41,14 @@ class MainActivity : AppCompatActivity() {
         } else {
             val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT)
+        }
+    }
+
+    fun updateBluetoothStatusButton() {
+        if (this.bluetoothAdapter?.isEnabled == false) {
+            this.bluetoothButton.setBackgroundColor(Color.RED)
+        } else {
+            this.bluetoothButton.setBackgroundColor(Color.GREEN)
         }
     }
 }
