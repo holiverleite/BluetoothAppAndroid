@@ -17,8 +17,8 @@ import androidx.core.os.HandlerCompat.postDelayed
 import androidx.core.view.isVisible
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
-import java.lang.Exception
 import java.util.*
+import kotlin.Exception
 import kotlin.collections.ArrayList
 
 class MainActivity : AppCompatActivity() {
@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        this.UUID_APP = UUID.fromString("2b2e0f29-3129-4419-af47-30e1c84610aa")
+        this.UUID_APP = UUID.fromString("8989063a-c9af-463a-b3f1-f21d9b2b827b")
 
         this.bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter != null) {
@@ -53,7 +53,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(discoverableIntent)
 
             this.disableOtherRules()
-            AcceptThread().start()
+            AcceptThread(null,"").start()
         }
 
         // Device 1 Button
@@ -61,7 +61,6 @@ class MainActivity : AppCompatActivity() {
             val filter = IntentFilter(BluetoothDevice.ACTION_FOUND)
             registerReceiver(this.receiver, filter)
             this.currentButtonPressed = "1"
-            Log.i(TAG,"Button 1 Pressed")
             this.bluetoothAdapter?.startDiscovery()
         }
 
@@ -72,9 +71,9 @@ class MainActivity : AppCompatActivity() {
 
                 Log.i(TAG,device.name)
                 if (device.name == "GT-I8552B") {
-                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
+//                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
 //                    ConnectThread(device,"Testeeeeeee").start()
-                    AcceptThread().start()
+                    AcceptThread(device,"Testeeee").start()
                 }
             }
         }
@@ -90,7 +89,8 @@ class MainActivity : AppCompatActivity() {
                     val deviceName = device.name
                     val deviceHardwareAddress = device.address // MAC
 
-                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
+//                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
+                    bluetoothAdapter?.cancelDiscovery()
                     ConnectThread(device,currentButtonPressed).start()
                 }
             }
@@ -135,70 +135,102 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Server
-    private inner class AcceptThread : Thread() {
+    private inner class AcceptThread(device: BluetoothDevice?, message: String) : Thread() {
+
+        val mmSocket: BluetoothSocket? by lazy(LazyThreadSafetyMode.NONE) {
+            device?.createRfcommSocketToServiceRecord(UUID_APP)
+        }
 
         val mmServerSocket: BluetoothServerSocket? by lazy(LazyThreadSafetyMode.NONE) {
             bluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord("11", UUID_APP)
         }
+        val currentMessage = message
+        var currentDevice = device
 
         override fun run() {
             // Keep listening until exception occurs or a socket is returned.
-            var shouldLoop = true
-            while (shouldLoop) {
-                val socket: BluetoothSocket? = try {
-                    mmServerSocket?.accept()
-                } catch (e: IOException) {
-                    Log.e(TAG, "Socket's accept() method failed", e)
-                    shouldLoop = false
-                    null
-                }
-                socket?.also {
-                    var inputStream = socket.inputStream
+            if (currentMessage != "") {
+                bluetoothAdapter?.cancelDiscovery()
+
+                mmSocket?.use { socket ->
+                    // Connect to the remote device through the socket. This call blocks
+                    // until it succeeds or throws an exception.
+                    socket.connect()
+
+                    val outputStream = mmSocket?.outputStream
 
                     try {
-                        sleep(500) // It's necessary to get the message
-                        val available = inputStream.available()
-                        val bytes = ByteArray(available)
-                        inputStream.read(bytes, 0, available)
-                        var message = String(bytes)
-
-                        if (message != "") {
-                            when (message) {
-                                "1" -> {
-                                    device1.setBackgroundColor(Color.GREEN)
-                                    device1.setText("Device 1 Pareado")
-                                }
-                                "2" -> {
-                                    device2.setBackgroundColor(Color.GREEN)
-                                    device2.setText("Device 2 Pareado")
-                                }
-                                "3" -> {
-                                    device3.setBackgroundColor(Color.GREEN)
-                                    device3.setText("Device 3 Pareado")
-                                }
-                                "4" -> {
-                                    device4.setBackgroundColor(Color.GREEN)
-                                    device4.setText("Device 4 Pareado")
-                                }
-                                "5" -> {
-                                    device5.setBackgroundColor(Color.GREEN)
-                                    device5.setText("Device 5 Pareado")
-                                }
-                                "6" -> {
-                                    device6.setBackgroundColor(Color.GREEN)
-                                    device6.setText("Device 6 Pareado")
-                                }
-                                "7" -> {
-                                    device7.setBackgroundColor(Color.GREEN)
-                                    device7.setText("Device 7 Pareado")
-                                }
-                            }
-                            mmServerSocket?.close()
-                            shouldLoop = false
-                        }
+                        outputStream?.write(currentMessage.toByteArray())
+                        outputStream?.flush()
+                        currentButtonPressed = ""
                     } catch (e: Exception) {
-
+                        Log.e("client", "Sent")
+                    } finally {
+                        outputStream?.close()
+                        mmSocket?.close()
                     }
+                }
+            } else {
+                var shouldLoop = true
+                while (shouldLoop) {
+                    val socket: BluetoothSocket? = try {
+                        mmServerSocket?.accept()
+                    } catch (e: IOException) {
+                        Log.e(TAG, "Socket's accept() method failed", e)
+                        shouldLoop = false
+                        null
+                    }
+
+                    socket?.also {
+                        var inputStream = socket.inputStream
+
+                        try {
+                            sleep(1000) // It's necessary to get the message
+                            val available = inputStream.available()
+                            val bytes = ByteArray(available)
+                            inputStream.read(bytes, 0, available)
+                            var message = String(bytes)
+
+                            if (message != "") {
+                                when (message) {
+                                    "1" -> {
+                                        device1.setBackgroundColor(Color.GREEN)
+                                        device1.setText("Device 1 Pareado")
+                                    }
+                                    "2" -> {
+                                        device2.setBackgroundColor(Color.GREEN)
+                                        device2.setText("Device 2 Pareado")
+                                    }
+                                    "3" -> {
+                                        device3.setBackgroundColor(Color.GREEN)
+                                        device3.setText("Device 3 Pareado")
+                                    }
+                                    "4" -> {
+                                        device4.setBackgroundColor(Color.GREEN)
+                                        device4.setText("Device 4 Pareado")
+                                    }
+                                    "5" -> {
+                                        device5.setBackgroundColor(Color.GREEN)
+                                        device5.setText("Device 5 Pareado")
+                                    }
+                                    "6" -> {
+                                        device6.setBackgroundColor(Color.GREEN)
+                                        device6.setText("Device 6 Pareado")
+                                    }
+                                    "7" -> {
+                                        device7.setBackgroundColor(Color.GREEN)
+                                        device7.setText("Device 7 Pareado")
+                                    }
+                                }
+                                mmServerSocket?.close()
+                                shouldLoop = false
+                            }
+                        } catch (e: Exception) {
+
+                        }
+                    }
+
+                    Log.i(TAG,"")
                 }
             }
         }
