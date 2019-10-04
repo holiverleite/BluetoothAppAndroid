@@ -14,17 +14,21 @@ import android.os.Bundle
 import android.os.Handler
 import android.util.Log
 import androidx.core.os.HandlerCompat.postDelayed
+import androidx.core.view.isVisible
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
 import java.lang.Exception
 import java.util.*
+import kotlin.collections.ArrayList
 
 class MainActivity : AppCompatActivity() {
 
-    var TAG = "teste"
+    var TAG = "leite"
     var UUID_APP: UUID? = null
     val REQUEST_ENABLE_BT = 1
     var bluetoothAdapter: BluetoothAdapter? = null
+    var devices: ArrayList<BluetoothDevice> = arrayListOf()
+    var currentButtonPressed: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,8 +60,23 @@ class MainActivity : AppCompatActivity() {
         this.device1.setOnClickListener {
             val filter = IntentFilter(BluetoothDevice.ACTION_FOUND)
             registerReceiver(this.receiver, filter)
-
+            this.currentButtonPressed = "1"
+            Log.i(TAG,"Button 1 Pressed")
             this.bluetoothAdapter?.startDiscovery()
+        }
+
+        // Start Button
+        this.startButton.setOnClickListener {
+            for (device in BluetoothAdapter.getDefaultAdapter().bondedDevices) {
+                this.devices.add(device)
+
+                Log.i(TAG,device.name)
+                if (device.name == "GT-I8552B") {
+                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
+//                    ConnectThread(device,"Testeeeeeee").start()
+                    AcceptThread().start()
+                }
+            }
         }
     }
 
@@ -72,7 +91,7 @@ class MainActivity : AppCompatActivity() {
                     val deviceHardwareAddress = device.address // MAC
 
                     BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
-                    ConnectThread(device).start()
+                    ConnectThread(device,currentButtonPressed).start()
                 }
             }
         }
@@ -96,6 +115,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun disableOtherRules() {
+        this.startButton.isVisible = true
+        this.device_master.isEnabled = false
         this.device1.isEnabled = false
         this.device2.isEnabled = false
         this.device3.isEnabled = false
@@ -135,14 +156,14 @@ class MainActivity : AppCompatActivity() {
                     var inputStream = socket.inputStream
 
                     try {
-                        sleep(500)
+                        sleep(500) // It's necessary to get the message
                         val available = inputStream.available()
                         val bytes = ByteArray(available)
-                        inputStream.read(bytes,0,available)
+                        inputStream.read(bytes, 0, available)
                         var message = String(bytes)
 
                         if (message != "") {
-                            when(message) {
+                            when (message) {
                                 "1" -> {
                                     device1.setBackgroundColor(Color.GREEN)
                                     device1.setText("Device 1 Pareado")
@@ -193,11 +214,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Client
-    private inner class ConnectThread(device: BluetoothDevice) : Thread() {
+    private inner class ConnectThread(device: BluetoothDevice, message: String) : Thread() {
 
         val mmSocket: BluetoothSocket? by lazy(LazyThreadSafetyMode.NONE) {
             device.createRfcommSocketToServiceRecord(UUID_APP)
         }
+        val localMessage = message
 
         override fun run() {
             // Cancel discovery because it otherwise slows down the connection.
@@ -208,22 +230,39 @@ class MainActivity : AppCompatActivity() {
                 // until it succeeds or throws an exception.
                 socket.connect()
 
+                val inputStream = mmSocket?.inputStream
                 val outputStream = mmSocket?.outputStream
+                val available = inputStream?.available()
 
-                try {
-                    val message = "1"
-                    outputStream?.write(message.toByteArray())
-                    outputStream?.flush()
-                } catch (e: Exception) {
-                    Log.e("client", "Sent")
-                } finally {
-                    outputStream?.close()
-                    mmSocket?.close()
-                }
+                if (available != null && available != 0) {
+                    try {
+                        val bytes = ByteArray(available)
+                        inputStream.read(bytes,0,available)
+                        outputMessage.text = String(bytes)
+                    } catch (e: Exception) {
 
-                // The connection attempt succeeded. Perform work associated with
-                // the connection in a separate thread.
+                    } finally {
+                        inputStream?.close()
+                        mmSocket?.close()
+                    }
+
+
+                } else {
+                    try {
+                        outputStream?.write(localMessage.toByteArray())
+                        outputStream?.flush()
+                        currentButtonPressed = ""
+                    } catch (e: Exception) {
+                        Log.e("client", "Sent")
+                    } finally {
+                        outputStream?.close()
+                        mmSocket?.close()
+                    }
+
+                    // The connection attempt succeeded. Perform work associated with
+                    // the connection in a separate thread.
 //                manageMyConnectedSocket(socket)
+                }
             }
         }
 
@@ -236,6 +275,4 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-
 }
