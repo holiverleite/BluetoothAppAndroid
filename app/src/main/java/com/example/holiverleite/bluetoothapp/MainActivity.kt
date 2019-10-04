@@ -11,14 +11,17 @@ import android.content.IntentFilter
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
 import android.util.Log
+import androidx.core.os.HandlerCompat.postDelayed
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
+import java.lang.Exception
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
-    var TAG = "a"
+    var TAG = "teste"
     var UUID_APP: UUID? = null
     val REQUEST_ENABLE_BT = 1
     var bluetoothAdapter: BluetoothAdapter? = null
@@ -45,7 +48,8 @@ class MainActivity : AppCompatActivity() {
             }
             startActivity(discoverableIntent)
 
-            AcceptThread().mmServerSocket
+            this.disableOtherRules()
+            AcceptThread().start()
         }
 
         // Device 1 Button
@@ -67,7 +71,8 @@ class MainActivity : AppCompatActivity() {
                     val deviceName = device.name
                     val deviceHardwareAddress = device.address // MAC
 
-                    ConnectThread(device).run()
+                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
+                    ConnectThread(device).start()
                 }
             }
         }
@@ -90,6 +95,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun disableOtherRules() {
+        this.device1.isEnabled = false
+        this.device2.isEnabled = false
+        this.device3.isEnabled = false
+        this.device4.isEnabled = false
+        this.device5.isEnabled = false
+        this.device6.isEnabled = false
+        this.device7.isEnabled = false
+    }
+
     fun updateBluetoothStatusButton() {
         if (this.bluetoothAdapter?.isEnabled == false) {
             this.bluetoothButton.setBackgroundColor(Color.RED)
@@ -97,10 +112,6 @@ class MainActivity : AppCompatActivity() {
             this.bluetoothButton.setBackgroundColor(Color.GREEN)
         }
     }
-
-
-
-
 
     // Server
     private inner class AcceptThread : Thread() {
@@ -121,9 +132,52 @@ class MainActivity : AppCompatActivity() {
                     null
                 }
                 socket?.also {
-//                    manageMyConnectedSocket(it)
-                    mmServerSocket?.close()
-                    shouldLoop = false
+                    var inputStream = socket.inputStream
+
+                    try {
+                        sleep(500)
+                        val available = inputStream.available()
+                        val bytes = ByteArray(available)
+                        inputStream.read(bytes,0,available)
+                        var message = String(bytes)
+
+                        if (message != "") {
+                            when(message) {
+                                "1" -> {
+                                    device1.setBackgroundColor(Color.GREEN)
+                                    device1.setText("Device 1 Pareado")
+                                }
+                                "2" -> {
+                                    device2.setBackgroundColor(Color.GREEN)
+                                    device2.setText("Device 2 Pareado")
+                                }
+                                "3" -> {
+                                    device3.setBackgroundColor(Color.GREEN)
+                                    device3.setText("Device 3 Pareado")
+                                }
+                                "4" -> {
+                                    device4.setBackgroundColor(Color.GREEN)
+                                    device4.setText("Device 4 Pareado")
+                                }
+                                "5" -> {
+                                    device5.setBackgroundColor(Color.GREEN)
+                                    device5.setText("Device 5 Pareado")
+                                }
+                                "6" -> {
+                                    device6.setBackgroundColor(Color.GREEN)
+                                    device6.setText("Device 6 Pareado")
+                                }
+                                "7" -> {
+                                    device7.setBackgroundColor(Color.GREEN)
+                                    device7.setText("Device 7 Pareado")
+                                }
+                            }
+                            mmServerSocket?.close()
+                            shouldLoop = false
+                        }
+                    } catch (e: Exception) {
+
+                    }
                 }
             }
         }
@@ -137,8 +191,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-
 
     // Client
     private inner class ConnectThread(device: BluetoothDevice) : Thread() {
@@ -156,6 +208,19 @@ class MainActivity : AppCompatActivity() {
                 // until it succeeds or throws an exception.
                 socket.connect()
 
+                val outputStream = mmSocket?.outputStream
+
+                try {
+                    val message = "1"
+                    outputStream?.write(message.toByteArray())
+                    outputStream?.flush()
+                } catch (e: Exception) {
+                    Log.e("client", "Sent")
+                } finally {
+                    outputStream?.close()
+                    mmSocket?.close()
+                }
+
                 // The connection attempt succeeded. Perform work associated with
                 // the connection in a separate thread.
 //                manageMyConnectedSocket(socket)
@@ -171,4 +236,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+
 }
