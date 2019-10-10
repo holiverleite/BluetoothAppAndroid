@@ -11,12 +11,15 @@ import android.content.IntentFilter
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Message
 import android.util.Log
 import androidx.core.view.isVisible
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.Socket
 import java.util.*
 import kotlin.Exception
 import kotlin.collections.ArrayList
@@ -28,10 +31,13 @@ class MainActivity : AppCompatActivity() {
     val REQUEST_ENABLE_BT = 1
     var bluetoothAdapter: BluetoothAdapter? = null
     var masterDevice: BluetoothDevice? = null
-    var clientSocket: BluetoothSocket? = null
     var clientDevice: BluetoothDevice? = null
     var devices: ArrayList<BluetoothDevice> = arrayListOf()
     var currentButtonPressed: String = ""
+    var mConnectedThread: ConnectedThread? = null
+    var mConnectThread: ConnectThread? = null
+    var mSecureAcceptThread: AcceptThread? = null
+    var mHandler: Handler? = null
 
     // Device Client receiver
     private val receiver = object : BroadcastReceiver() {
@@ -40,10 +46,9 @@ class MainActivity : AppCompatActivity() {
             when(action) {
                 BluetoothDevice.ACTION_FOUND -> {
                     val device: BluetoothDevice = intent!!.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-//                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
                     masterDevice = device
                     bluetoothAdapter?.cancelDiscovery()
-                    ConnectThread(device,currentButtonPressed).start()
+                    connect(device)
                 }
             }
         }
@@ -53,7 +58,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        this.UUID_APP = UUID.fromString("f78d7c4b-5b23-4d80-9ec4-c5e22562fa80")
+        this.UUID_APP = UUID.fromString("15316465-aa57-4690-abcf-172afa2f7e0b")
 
         this.bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter != null) {
@@ -72,7 +77,9 @@ class MainActivity : AppCompatActivity() {
             startActivity(discoverableIntent)
 
             this.disableOtherRules()
-            AcceptThread(null,"").start()
+            mSecureAcceptThread = AcceptThread()
+            mSecureAcceptThread?.start()
+//            AcceptThread().start()
         }
 
         // Device 1 Button
@@ -90,14 +97,13 @@ class MainActivity : AppCompatActivity() {
 
                 Log.i(TAG,device.name)
                 if (device.name == "GT-I8552B") {
-//                    BluetoothAdapter.getDefaultAdapter().cancelDiscovery()
-//                    ConnectThread(device,"Testeeeeeee").start()
-//                    AcceptThread(device,"Testeeee").start()
-//                    clientDevice = device
-//                    bluetoothAdapter?.cancelDiscovery()
-                    ConnectedThreadServer(clientSocket!!,device).write() // isso nao pode, tem q usar handler
-//                    AcceptThread(device,"Testeeee").start()
-//                    ConnectThread(device,"TesteeHaroldo").start()
+                    bluetoothAdapter?.cancelDiscovery()
+
+//                    acopanhar o connect connected ????????
+//                    mConnectThread = ConnectThread(device)
+//                    mConnectThread?.start()
+//                    moutput ta closed !!!!!!
+                    mConnectedThread?.write("blablabla")
                 }
             }
         }
@@ -140,15 +146,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun connect(device: BluetoothDevice) {
+
+        if (mConnectThread != null) {
+            mConnectThread?.cancel()
+            mConnectThread = null
+        }
+
+        mConnectThread = ConnectThread(device)
+        mConnectThread?.start()
+    }
+
+    fun connected(socket: BluetoothSocket, device: BluetoothDevice) {
+
+        // Cancel any thread currently running a connection
+        if (mConnectedThread != null) {
+            mConnectedThread?.cancel()
+            mConnectedThread = null
+        }
+
+        if (mSecureAcceptThread != null) {
+            mSecureAcceptThread?.cancel()
+            mSecureAcceptThread = null
+        }
+
+        mConnectedThread = ConnectedThread(socket,device)
+        mConnectedThread?.start()
+    }
+
+
+
     // Server
-    private inner class AcceptThread(device: BluetoothDevice?, message: String) : Thread() {
+    inner class AcceptThread() : Thread() {
 
         val mmServerSocket: BluetoothServerSocket? by lazy(LazyThreadSafetyMode.NONE) {
             bluetoothAdapter?.listenUsingInsecureRfcommWithServiceRecord("11", UUID_APP)
         }
-
-        val currentMessage = message
-        var currentDevice = device
 
         override fun run() {
             // Keep listening until exception occurs or a socket is returned.
@@ -164,13 +197,13 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 socket?.also {
-
-//                    clientSocket = it
-                    ConnectedThreadServer(it,null).start()
-//                    mmServerSocket?.close()
-                    shouldLoop = false
+                    if (socket != null) {
+                        connected(it,it.remoteDevice)
+                        shouldLoop = false
+                    }
                 }
             }
+//            mmServerSocket?.close()
         }
 
         // Closes the connect socket and causes the thread to finish.
@@ -184,12 +217,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Client
-    private inner class ConnectThread(device: BluetoothDevice, message: String) : Thread() {
+    inner class ConnectThread(device: BluetoothDevice) : Thread() {
 
         val mmSocket: BluetoothSocket? by lazy(LazyThreadSafetyMode.NONE) {
             device.createRfcommSocketToServiceRecord(UUID_APP)
         }
-        val localMessage = message
+        val currentDevice = device
 
         override fun run() {
             // Cancel discovery because it otherwise slows down the connection.
@@ -200,44 +233,28 @@ class MainActivity : AppCompatActivity() {
                 // until it succeeds or throws an exception.
                 socket.connect()
 
-                clientSocket = socket
-                val inputStream = mmSocket?.inputStream
-                val outputStream = mmSocket?.outputStream
+                val inputStream = socket?.inputStream
+                val outputStream = socket?.outputStream
                 val available = inputStream?.available()
 
-                if (available != null && available != 0) {
-                    try {
-                        val bytes = ByteArray(available)
-                        inputStream.read(bytes,0,available)
-                        outputMessage.text = String(bytes)
-                    } catch (e: Exception) {
-
-                    } finally {
-//                        inputStream?.close()
-//                        mmSocket?.close()
-                    }
 
 
-                } else {
-                    try {
-                        outputStream?.write(localMessage.toByteArray())
-                        outputStream?.flush()
-                        currentButtonPressed = ""
-//                        ConnectedThread(mmSocket!!).start() // Fica escutando
-//                        bluetoothAdapter?.cancelDiscovery()
-//                        ConnectedThread(mmSocket!!).start()
-//                        AcceptThreadClient(masterDevice,"aaaaa").start()
-                    } catch (e: Exception) {
-                        Log.e("client", "Sent")
-                    } finally {
-//                        outputStream?.close()
-//                        mmSocket?.close()
-                    }
+                try {
+                    var message = "1"
+                    outputStream?.write(message.toByteArray())
+//                    outputStream?.flush()
+                } catch (e: Exception) {
 
-                    // The connection attempt succeeded. Perform work associated with
-                    // the connection in a separate thread.
-//                manageMyConnectedSocket(socket)
+                } finally {
+//                    outputStream?.close()
+//                    inputStream?.close()
+//                    mmSocket?.close()
+//                    socket.close()
                 }
+
+                mConnectThread = null
+
+                connected(socket,currentDevice)
             }
         }
 
@@ -251,101 +268,82 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private inner class ConnectedThreadServer(private val mmSocket: BluetoothSocket, private val device: BluetoothDevice?) : Thread() {
+    // client 22
+    inner class ConnectedThread(mmSocket: BluetoothSocket,device: BluetoothDevice?) : Thread() {
 
-        private val mmInStream: InputStream = mmSocket.inputStream
-        private val mmOutStream: OutputStream = mmSocket.outputStream
+        var mmInStream: InputStream = mmSocket.inputStream
+        var mmOutStream: OutputStream = mmSocket.outputStream
         private val mmBuffer: ByteArray = ByteArray(1024) // mmBuffer store for the stream
-
-        val mmSockettt: BluetoothSocket? by lazy(LazyThreadSafetyMode.NONE) {
-            device?.createRfcommSocketToServiceRecord(UUID_APP)
-        }
-
+        private val currentSocket: BluetoothSocket = mmSocket
 
         override fun run() {
+            while (true) {
+                try {
+                    sleep(1000) // It's necessary to get the message
+                    val available = mmInStream.available()
+                    val bytes = ByteArray(available)
+                    mmInStream.read(bytes, 0, available)
+                    var message = String(bytes)
 
-            if (device != null) {
-                this.write("ooooo")
-            } else {
-                while (true) {
-                    try {
-                        sleep(1000) // It's necessary to get the message
-                        val available = mmInStream.available()
-                        val bytes = ByteArray(available)
-                        mmInStream.read(bytes, 0, available)
-                        var message = String(bytes)
-
-                        if (message != "") {
-                            when (message) {
-                                "1" -> {
-                                    device1.setBackgroundColor(Color.GREEN)
-                                    device1.setText("Device 1 Pareado")
-                                }
-                                "2" -> {
-                                    device2.setBackgroundColor(Color.GREEN)
-                                    device2.setText("Device 2 Pareado")
-                                }
-                                "3" -> {
-                                    device3.setBackgroundColor(Color.GREEN)
-                                    device3.setText("Device 3 Pareado")
-                                }
-                                "4" -> {
-                                    device4.setBackgroundColor(Color.GREEN)
-                                    device4.setText("Device 4 Pareado")
-                                }
-                                "5" -> {
-                                    device5.setBackgroundColor(Color.GREEN)
-                                    device5.setText("Device 5 Pareado")
-                                }
-                                "6" -> {
-                                    device6.setBackgroundColor(Color.GREEN)
-                                    device6.setText("Device 6 Pareado")
-                                }
-                                "7" -> {
-                                    device7.setBackgroundColor(Color.GREEN)
-                                    device7.setText("Device 7 Pareado")
-                                }
+                    if (message != "") {
+                        when (message) {
+                            "1" -> {
+                                device1.setBackgroundColor(Color.GREEN)
+                                device1.setText("Device 1 Pareado")
+                                return
+                            }
+                            "2" -> {
+                                device2.setBackgroundColor(Color.GREEN)
+                                device2.setText("Device 2 Pareado")
+                            }
+                            "3" -> {
+                                device3.setBackgroundColor(Color.GREEN)
+                                device3.setText("Device 3 Pareado")
+                            }
+                            "4" -> {
+                                device4.setBackgroundColor(Color.GREEN)
+                                device4.setText("Device 4 Pareado")
+                            }
+                            "5" -> {
+                                device5.setBackgroundColor(Color.GREEN)
+                                device5.setText("Device 5 Pareado")
+                            }
+                            "6" -> {
+                                device6.setBackgroundColor(Color.GREEN)
+                                device6.setText("Device 6 Pareado")
+                            }
+                            "7" -> {
+                                device7.setBackgroundColor(Color.GREEN)
+                                device7.setText("Device 7 Pareado")
+                            }
+                            else -> {
+                                outputMessage.text = message
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.i(TAG,"error")
                     }
+                } catch (e: Exception) {
+                    Log.i(TAG,"error")
                 }
             }
         }
 
         fun write(message: String) {
-            bluetoothAdapter?.cancelDiscovery()
-
-
-
-            val outputStream = mmSockettt?.outputStream
             try {
-                outputStream?.write(message.toByteArray())
-                outputStream?.flush()
-                Log.i("client", "Sent")
+//                currentSocket.outputStream.write(message.toByteArray())
+                mmOutStream?.write(message.toByteArray())
+                mmOutStream?.flush()
             } catch(e: java.lang.Exception) {
                 Log.e("client", "Cannot send", e)
             } finally {
-//                outputStream?.close()
-//                mmSocket?.close()
+                mmOutStream?.close()
+                currentSocket?.close()
             }
         }
-
-        // Call this from the main activity to send data to the remote device.
-//        fun write(bytes: ByteArray) {
-//            try {
-//                mmOutStream.write(bytes)
-//            } catch (e: IOException) {
-//                Log.e(TAG, "Error occurred when sending data", e)
-//                return
-//            }
-//        }
 
         // Call this method from the main activity to shut down the connection.
         fun cancel() {
             try {
-                mmSocket.close()
+                currentSocket?.close()
             } catch (e: IOException) {
                 Log.e(TAG, "Could not close the connect socket", e)
             }
